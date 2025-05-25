@@ -1,0 +1,323 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Catálogo de Hortaliças</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:Arial,sans-serif;background:#f4f4f4;font-size:16px;padding:2vw;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;touch-action:manipulation;}
+        .grok-catalog-container{max-width:100%;margin:0 auto;background:#fff;padding:4vw;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.1);overflow:auto;-webkit-overflow-scrolling:touch;}
+        h1{text-align:center;color:#333;font-size:1.5rem;margin-bottom:4vw;}
+        .grok-item{display:flex;flex-direction:column;padding:4vw;border-bottom:1px solid #eee;}
+        .grok-item:last-child{border-bottom:none;}
+        .grok-item-info{display:flex;align-items:center;margin-bottom:2vw;}
+        .grok-item-image{width:20vw;height:20vw;max-width:80px;max-height:80px;object-fit:cover;border-radius:8px;margin-right:3vw;cursor:pointer;}
+        .grok-item-details{flex:1;}
+        .grok-item-details h3{color:#333;font-size:1.1rem;margin:0;}
+        .grok-item-details p{color:#666;font-size:0.9rem;margin:1vw 0;}
+        .grok-item-quantity{display:flex;align-items:center;gap:4vw;}
+        .grok-item-quantity label{font-size:0.9rem;color:#333;}
+        .grok-item-quantity input{width:15vw;max-width:50px;padding:2vw;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:0.9rem;-webkit-appearance:none;appearance:none;}
+        .grok-quantity-btn{width:12vw;height:12vw;min-width:44px;min-height:44px;background:#2e7d32;color:#fff;border:none;border-radius:4px;font-size:1rem;display:inline-block;align-items:center;justify-content:center;position:relative;z-index:10;touch-action:manipulation;-webkit-appearance:none;}
+        .grok-quantity-btn:active{background:#1b5e20;}
+        .grok-quantity-btn:disabled{background:#ccc;}
+        #grok-order-summary{margin:4vw 0;padding:4vw;border:1px solid #ddd;border-radius:8px;background:#f9f9f9;}
+        #grok-order-summary h3{font-size:1.1rem;color:#333;margin-bottom:2vw;}
+        #grok-order-summary ul{list-style:none;padding:0;margin-bottom:2vw;}
+        #grok-order-summary li{font-size:0.9rem;color:#555;padding:1vw 0;}
+        #grok-order-summary p{font-size:1rem;font-weight:bold;color:#333;margin-top:2vw;}
+        #grok-delivery-details{margin-top:4vw;display:flex;flex-direction:column;gap:2vw;}
+        #grok-delivery-details label{font-size:0.9rem;color:#333;margin-bottom:1vw;}
+        #grok-delivery-details input,#grok-delivery-details select{width:100%;padding:2vw;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;}
+        .grok-finalize-btn{width:100%;padding:4vw;margin-top:4vw;background:#25D366;color:#fff;border:none;border-radius:8px;font-size:1rem;text-align:center;touch-action:manipulation;}
+        .grok-finalize-btn:active{background:#1ebe57;}
+        .grok-modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000a;z-index:100;}
+        .grok-modal-content{display:flex;justify-content:center;align-items:center;height:100%;padding:4vw;}
+        .grok-modal-carousel{position:relative;width:90vw;height:90vh;}
+        .grok-modal-images{display:flex;overflow:hidden;width:100%;height:100%;}
+        .grok-modal-image{width:100%;height:100%;object-fit:contain;}
+        .grok-modal-arrow{position:absolute;top:50%;transform:translateY(-50%);background:#0008;color:#fff;border:none;border-radius:50%;width:10vw;height:10vw;min-width:40px;min-height:40px;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+        .grok-modal-arrow.left{left:0;}
+        .grok-modal-arrow.right{right:0;}
+        .grok-modal-close{position:absolute;top:4vw;right:4vw;background:#fff;color:#333;border:none;border-radius:50%;width:10vw;height:10vw;min-width:40px;min-height:40px;font-size:1.2rem;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+        @media (min-width:600px){
+            body{font-size:18px;}
+            .grok-catalog-container{max-width:800px;padding:20px;}
+            h1{font-size:2rem;margin-bottom:20px;}
+            .grok-item{flex-direction:row;align-items:center;padding:15px;}
+            .grok-item-info{margin-bottom:0;}
+            .grok-item-image{width:100px;height:100px;margin-right:15px;}
+            .grok-item-details h3{font-size:1.3rem;}
+            .grok-item-details p{font-size:1rem;margin:5px 0;}
+            .grok-item-quantity{gap:15px;}
+            .grok-item-quantity input{width:60px;padding:8px;font-size:1rem;}
+            .grok-quantity-btn{width:44px;height:44px;font-size:1.2rem;}
+            #grok-order-summary{margin:20px 0;padding:15px;}
+            #grok-order-summary h3{font-size:1.3rem;margin-bottom:10px;}
+            #grok-order-summary li{font-size:1rem;padding:5px 0;}
+            #grok-order-summary p{font-size:1.1rem;margin-top:10px;}
+            #grok-delivery-details{margin-top:20px;gap:10px;}
+            #grok-delivery-details input,#grok-delivery-details select{padding:10px;font-size:1rem;}
+            .grok-finalize-btn{padding:15px;margin-top:20px;font-size:1.1rem;}
+            .grok-modal-carousel{width:80vw;height:80vh;}
+            .grok-modal-arrow{width:48px;height:48px;font-size:1.2rem;}
+            .grok-modal-close{top:20px;right:20px;width:48px;height:48px;}
+        }
+    </style>
+</head>
+<body>
+    <div class="grok-catalog-container">
+        <h1>Catálogo de Hortaliças</h1>
+        <div class="grok-item">
+            <div class="grok-item-info">
+                <img src="https://hortacomareia.com.br/wp-content/uploads/2025/05/ALFACE.webp" alt="Alface Americana" class="grok-item-image" data-images='["https://hortacomareia.com.br/wp-content/uploads/2025/05/ALFACE.webp", "https://placehold.co/100x100?text=Alface2"]'>
+                <div class="grok-item-details">
+                    <h3>Alface Americana</h3>
+                    <p>Folhas frescas, colhidas na hora - R$ 7,00/pé</p>
+                </div>
+            </div>
+            <div class="grok-item-quantity">
+                <label>Quantidade:</label>
+                <button class="grok-quantity-btn minus" data-action="minus">-</button>
+                <input type="number" min="0" value="0" data-name="Alface Americana" data-price="7.00">
+                <button class="grok-quantity-btn plus" data-action="plus">+</button>
+            </div>
+        </div>
+        <div class="grok-item">
+            <div class="grok-item-info">
+                <img src="https://placehold.co/100x100?text=Coentro" alt="Coentro" class="grok-item-image" data-images='["https://placehold.co/100x100?text=Coentro", "https://placehold.co/100x100?text=Coentro2"]'>
+                <div class="grok-item-details">
+                    <h3>Coentro</h3>
+                    <p>Maço fresco, ideal para temperos - R$ 2,50/maço</p>
+                </div>
+            </div>
+            <div class="grok-item-quantity">
+                <label>Quantidade:</label>
+                <button class="grok-quantity-btn minus" data-action="minus">-</button>
+                <input type="number" min="0" value="0" data-name="Coentro" data-price="2.50">
+                <button class="grok-quantity-btn plus" data-action="plus">+</button>
+            </div>
+        </div>
+        <div class="grok-item">
+            <div class="grok-item-info">
+                <img src="https://placehold.co/100x100?text=Cebolinha" alt="Cebolinha" class="grok-item-image" data-images='["https://placehold.co/100x100?text=Cebolinha", "https://placehold.co/100x100?text=Cebolinha2"]'>
+                <div class="grok-item-details">
+                    <h3>Cebolinha</h3>
+                    <p>Maço verde, perfeito para finalizações - R$ 2,00/maço</p>
+                </div>
+            </div>
+            <div class="grok-item-quantity">
+                <label>Quantidade:</label>
+                <button class="grok-quantity-btn minus" data-action="minus">-</button>
+                <input type="number" min="0" value="0" data-name="Cebolinha" data-price="2.00">
+                <button class="grok-quantity-btn plus" data-action="plus">+</button>
+            </div>
+        </div>
+        <div id="grok-order-summary">
+            <h3>Resumo do Pedido</h3>
+            <ul id="grok-order-items"></ul>
+            <p id="grok-order-total">Total: R$ 0.00</p>
+        </div>
+        <div id="grok-delivery-details">
+            <div>
+                <label for="grok-address-input">Endereço de Entrega:</label>
+                <input type="text" id="grok-address-input" placeholder="Ex.: Rua Exemplo, 123, Bairro, Cidade - MG">
+            </div>
+            <div>
+                <label for="grok-payment-method">Forma de Pagamento:</label>
+                <select id="grok-payment-method">
+                    <option value="PIX">PIX</option>
+                    <option value="DINHEIRO na entrega">DINHEIRO na entrega</option>
+                </select>
+            </div>
+            <div>
+                <label for="grok-recipient-name">Entregar a quem?</label>
+                <input type="text" id="grok-recipient-name" placeholder="Nome de quem vai receber">
+            </div>
+        </div>
+        <button class="grok-finalize-btn">Finalizar Pedido</button>
+    </div>
+    <div class="grok-modal" id="grok-image-modal">
+        <div class="grok-modal-content">
+            <div class="grok-modal-carousel" id="grok-modal-carousel">
+                <div class="grok-modal-images" id="grok-modal-images"></div>
+                <button class="grok-modal-arrow left" data-direction="prev"><</button>
+                <button class="grok-modal-arrow right" data-direction="next">></button>
+            </div>
+        </div>
+        <button class="grok-modal-close">✕</button>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            function updateOrderSummary(){
+                const items = document.querySelectorAll('.grok-item-quantity input');
+                const orderItems = document.getElementById('grok-order-items');
+                const orderTotal = document.getElementById('grok-order-total');
+                let total = 0;
+                let itemList = '';
+                items.forEach(item => {
+                    const quantity = parseInt(item.value) || 0;
+                    if(quantity > 0){
+                        const name = item.getAttribute('data-name');
+                        const price = parseFloat(item.getAttribute('data-price'));
+                        const itemTotal = quantity * price;
+                        total += itemTotal;
+                        itemList += `<li>${quantity}x ${name} - R$ ${itemTotal.toFixed(2)}</li>`;
+                    }
+                });
+                orderItems.innerHTML = itemList || '<li>Nenhum item selecionado.</li>';
+                orderTotal.textContent = `Total: R$ ${total.toFixed(2)}`;
+            }
+            function handleQuantityChange(button){
+                const action = button.getAttribute('data-action');
+                const input = action === 'minus' ? button.nextElementSibling : button.previousElementSibling;
+                let quantity = parseInt(input.value) || 0;
+                if(action === 'plus'){
+                    input.value = quantity + 1;
+                } else if(action === 'minus' && quantity > 0){
+                    input.value = quantity - 1;
+                }
+                updateOrderSummary();
+            }
+            function finalizeOrder(){
+                const items = document.querySelectorAll('.grok-item-quantity input');
+                const addressInput = document.getElementById('grok-address-input').value.trim();
+                const paymentMethod = document.getElementById('grok-payment-method').value;
+                const recipientName = document.getElementById('grok-recipient-name').value.trim();
+                let orderMessage = '*Meu Pedido:*\n';
+                let total = 0;
+                let hasItems = false;
+                items.forEach(item => {
+                    const quantity = parseInt(item.value) || 0;
+                    if(quantity > 0){
+                        hasItems = true;
+                        const name = item.getAttribute('data-name');
+                        const price = parseFloat(item.getAttribute('data-price'));
+                        const itemTotal = quantity * price;
+                        total += itemTotal;
+                        orderMessage += `${quantity}x ${name} - R$ ${itemTotal.toFixed(2)}\n`;
+                    }
+                });
+                if(!hasItems){
+                    alert('Por favor, selecione pelo menos um item.');
+                    return;
+                }
+                if(addressInput){
+                    orderMessage += `\n*Endereço de Entrega:* ${addressInput}\n`;
+                }
+                orderMessage += `*Forma de Pagamento:* ${paymentMethod}\n`;
+                if(recipientName){
+                    orderMessage += `*Entregar a quem:* ${recipientName}\n`;
+                }
+                orderMessage += `\n*Total: R$ ${total.toFixed(2)}*`;
+                const phoneNumber = '5533999745784';
+                const encodedMessage = encodeURIComponent(orderMessage);
+                const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+                window.location.href = whatsappUrl;
+            }
+            function openModal(image){
+                const modal = document.getElementById('grok-image-modal');
+                const imagesContainer = document.getElementById('grok-modal-images');
+                const imageUrls = JSON.parse(image.getAttribute('data-images'));
+                imagesContainer.innerHTML = '';
+                imageUrls.forEach((url, index) => {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = `Imagem ${index + 1}`;
+                    img.className = 'grok-modal-image';
+                    imagesContainer.appendChild(img);
+                });
+                let currentIndex = imageUrls.indexOf(image.src);
+                if(currentIndex === -1) currentIndex = 0;
+                imagesContainer.style.transform = `translateX(-${currentIndex * 100}%)`;
+                modal.style.display = 'block';
+                function showImage(index){
+                    currentIndex = index;
+                    if(currentIndex >= imageUrls.length) currentIndex = 0;
+                    if(currentIndex < 0) currentIndex = imageUrls.length - 1;
+                    imagesContainer.style.transform = `translateX(-${currentIndex * 100}%)`;
+                }
+                document.querySelector('.grok-modal-arrow.left').onclick = function(){
+                    showImage(currentIndex - 1);
+                };
+                document.querySelector('.grok-modal-arrow.right').onclick = function(){
+                    showImage(currentIndex + 1);
+                };
+            }
+            function closeModal(){
+                const modal = document.getElementById('grok-image-modal');
+                modal.style.display = 'none';
+            }
+            document.querySelectorAll('.grok-quantity-btn').forEach(button => {
+                ['click', 'touchstart'].forEach(event => {
+                    button.addEventListener(event, function(e){
+                        e.preventDefault();
+                        handleQuantityChange(button);
+                    });
+                });
+            });
+            document.querySelectorAll('.grok-item-quantity input').forEach(input => {
+                input.addEventListener('input', updateOrderSummary);
+            });
+            const finalizeButton = document.querySelector('.grok-finalize-btn');
+            ['click', 'touchstart'].forEach(event => {
+                finalizeButton.addEventListener(event, function(e){
+                    e.preventDefault();
+                    finalizeOrder();
+                });
+            });
+            document.querySelectorAll('.grok-item-image').forEach(image => {
+                ['click', 'touchstart'].forEach(event => {
+                    image.addEventListener(event, function(e){
+                        e.preventDefault();
+                        openModal(image);
+                    });
+                });
+            });
+            document.querySelector('.grok-modal-close').addEventListener('click', closeModal);
+            updateOrderSummary();
+        });
+    </script>
+</body>
+</html>
